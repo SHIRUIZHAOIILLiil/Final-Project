@@ -1,0 +1,42 @@
+dataset:
+  name: sunrgbd_nyu_object
+  root: "E:/dataset/SUNRGBD"          # SUNRGBD root directory
+  sensor: "kv1"
+  subset: "NYUdata"                   # NYUdata
+
+  rgb:
+    dir: "image"
+    ext: ".jpg"
+    pattern: "{id}.jpg"
+
+  depth:
+    dir: "depth"
+    ext: ".png"
+    pattern: "{id}.png"
+
+  task: "image_pair"                 # Key: Object crop
+  labels:
+    type: "per_single_file"
+    filename: "scene.txt"
+    format: "single_token"
+    lowercase: true
+    strip: true
+
+  preprocessing:
+    image_size: [224, 224]
+    depth:
+      fill_missing: 0
+      # clip_max_meters: 5.0          # Cut off the depth at a distance
+      normalize: "minmax"             # Use either minmax or zscore as the baseline.
+      to_3ch: false
+
+  split:
+    method: "random"                  # First, randomly assign tasks and run the pipeline.
+    train: 0.7
+    val: 0.15
+    test: 0.15
+    seed: 42
+    stratify: true                    # Hierarchical categorization
+
+experiment:
+  seed: 42

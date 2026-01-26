@@ -213,10 +213,6 @@ __marimo__/
 
 # Datasets (DO NOT COMMIT)
 data/
-dataset/
-datasets/
-scannet/
-sunrgbd/
 nyuv2/
 kitti/
 custom_dataset/
@@ -224,7 +220,6 @@ custom_dataset/
 # Model weights / checkpoints
 checkpoints/
 weights/
-models/
 *.pth
 *.pt
 *.ckpt
