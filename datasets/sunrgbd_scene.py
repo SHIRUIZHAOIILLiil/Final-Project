@@ -8,7 +8,7 @@ from PIL import Image
 
 import torch
 from torch.utils.data import Dataset
-
+from torchvision import transforms
 
 def _read_single_token(path: Path, lowercase: bool = True) -> str:
     s = path.read_text(encoding="utf-8", errors="ignore").strip()
@@ -48,6 +48,74 @@ def _normalize_depth(depth: np.ndarray, mode: str = "minmax", fill_missing: floa
 
     return np.clip(d, 0.0, 1.0)
 
+def _build_index(
+    base: Path,
+    rgb_cfg: dict,
+    depth_cfg: dict,
+    label_filename: str,
+):
+    if not base.exists():
+        raise FileNotFoundError(f"Dataset base not found: {base}")
+
+    # collect valid samples
+    items: List[Tuple[str, Path, Path, Path]] = []
+    for sd in sorted([p for p in base.iterdir() if p.is_dir()]):
+        sid = sd.name
+        rgb_path = sd / rgb_cfg["dir"] / rgb_cfg.get("pattern", "{id}.jpg").format(id=sid)
+        depth_path = sd / depth_cfg["dir"] / depth_cfg.get("pattern", "{id}.png").format(id=sid)
+        label_path = sd / label_filename
+        if rgb_path.exists() and depth_path.exists() and label_path.exists():
+            items.append((sid, rgb_path, depth_path, label_path))
+
+    if not items:
+        raise RuntimeError(f"No valid samples found under: {base}")
+    return items
+
+def _make_split(
+        labels: List[str],
+        label_to_index: Dict[str, int],
+        tr: float,
+        va: float,
+        seed: int,
+        stratify: bool = True,
+) -> Tuple[List[int], List[int], List[int]]:
+    rng = np.random.default_rng(seed)
+    if stratify:
+        by_class: Dict[int, List[int]] = {}
+        for i, lab in enumerate(labels):
+            c = label_to_index[lab]
+            by_class.setdefault(c, []).append(i)
+        for c in by_class:
+            rng.shuffle(by_class[c])
+
+        train_idx, val_idx, test_idx = [], [], []
+        for c, idxs in by_class.items():
+            n = len(idxs)
+            n_tr = int(round(n * tr))
+            n_va = int(round(n * va))
+            n_tr = min(n_tr, n)
+            n_va = min(n_va, n - n_tr)
+            train_idx += idxs[:n_tr]
+            val_idx += idxs[n_tr:n_tr + n_va]
+            test_idx += idxs[n_tr + n_va:]
+
+        rng.shuffle(train_idx)
+        rng.shuffle(val_idx)
+        rng.shuffle(test_idx)
+    else:
+        all_idx = list(range(len(labels)))
+        rng.shuffle(all_idx)
+
+        n = len(all_idx)
+        n_tr = int(round(n * tr))
+        n_va = int(round(n * va))
+
+        train_idx = all_idx[:n_tr]
+        val_idx = all_idx[n_tr:n_tr + n_va]
+        test_idx = all_idx[n_tr + n_va:]
+
+    return train_idx, val_idx, test_idx
+
 
 class SUNRGBDSceneDataset(Dataset):
     """
@@ -70,60 +138,46 @@ class SUNRGBDSceneDataset(Dataset):
         self.cfg = cfg
         self.split = split
 
-        dcfg = cfg["dataset"]
+        dcfg = self.cfg["dataset"]
         root = Path(dcfg["root"])
-        sensor = dcfg.get("sensor", "kv1")
-        subset = dcfg.get("subset", "NYUdata")
+        sensor = dcfg["sensor"]
+        subset = dcfg["subset"]
 
         rgb_cfg = dcfg["rgb"]
         depth_cfg = dcfg["depth"]
 
-        task = dcfg.get("task", "image_pair")
+        task = dcfg["task"]
         if task != "image_pair":
             raise ValueError(f"Current dataset supports task='image_pair' only, got: {task}")
 
         # preprocessing
-        pcfg = dcfg.get("preprocessing", {})
-        img_h, img_w = pcfg.get("image_size", [224, 224])
+        pcfg = dcfg["preprocessing"]
+        img_h, img_w = pcfg["image_size"]
 
-        depth_pcfg = pcfg.get("depth", {})
-        depth_fill = float(depth_pcfg.get("fill_missing", 0.0))
-        depth_norm = depth_pcfg.get("normalize", "minmax")
+        depth_pcfg = pcfg["depth"]
+        depth_fill = float(depth_pcfg["fill_missing"])
+        depth_norm = depth_pcfg["normalize"]
 
         # labels (per-sample)
-        lcfg = dcfg.get("labels", {})
+        lcfg = dcfg["labels"]
         if lcfg.get("type") != "per_single_file":
             raise ValueError("labels.type must be 'per_single_file' for this dataset.")
-        label_filename = lcfg.get("filename", "scene.txt")
-        lowercase = bool(lcfg.get("lowercase", True))
+        label_filename = lcfg["filename"]
+        lowercase = bool(lcfg["lowercase"])
 
         # split config
-        scfg = dcfg.get("split", {})
-        method = scfg.get("method", "random")
+        scfg = dcfg["split"]
+        method = scfg["method"]
         if method != "random":
             raise ValueError("Only split.method='random' is supported in this minimal baseline.")
-        tr = float(scfg.get("train", 0.7))
-        va = float(scfg.get("val", 0.15))
-        te = float(scfg.get("test", 0.15))
-        seed = int(scfg.get("seed", 42))
+        tr = float(scfg["train"])
+        va = float(scfg["val"])
+        te = float(scfg["test"])
+        seed = int(scfg["seed"])
 
         base = root / sensor / subset
-        if not base.exists():
-            raise FileNotFoundError(f"Dataset base not found: {base}")
-
-        # collect valid samples
-        items: List[Tuple[str, Path, Path, Path]] = []
-        for sd in sorted([p for p in base.iterdir() if p.is_dir()]):
-            sid = sd.name
-            rgb_path = sd / rgb_cfg.get("dir", "image") / rgb_cfg.get("pattern", "{id}.jpg").format(id=sid)
-            depth_path = sd / depth_cfg.get("dir", "depth") / depth_cfg.get("pattern", "{id}.png").format(id=sid)
-            label_path = sd / label_filename
-            if rgb_path.exists() and depth_path.exists() and label_path.exists():
-                items.append((sid, rgb_path, depth_path, label_path))
-
-        if not items:
-            raise RuntimeError(f"No valid samples found under: {base}")
-
+        items = _build_index(base, rgb_cfg, depth_cfg, label_filename)
+        self.__all_items = items
         # read labels & build mapping
         all_labels = [_read_single_token(lp, lowercase=lowercase) for _, _, _, lp in items]
         if label_to_index is None:
@@ -133,34 +187,45 @@ class SUNRGBDSceneDataset(Dataset):
             self.label_to_index = dict(label_to_index)
 
         # stratified-ish random split by class
-        rng = np.random.default_rng(seed)
-        by_class: Dict[int, List[int]] = {}
-        for i, lab in enumerate(all_labels):
-            c = self.label_to_index[lab]
-            by_class.setdefault(c, []).append(i)
-        for c in by_class:
-            rng.shuffle(by_class[c])
 
-        train_idx, val_idx, test_idx = [], [], []
-        for c, idxs in by_class.items():
-            n = len(idxs)
-            n_tr = int(round(n * tr))
-            n_va = int(round(n * va))
-            n_tr = min(n_tr, n)
-            n_va = min(n_va, n - n_tr)
-            train_idx += idxs[:n_tr]
-            val_idx += idxs[n_tr:n_tr + n_va]
-            test_idx += idxs[n_tr + n_va:]
+        train_idx, val_idx, test_idx = _make_split(all_labels, self.label_to_index, tr, va, seed)
+        self._split_indices = {
+            "train": train_idx,
+            "val": val_idx,
+            "test": test_idx,
+        }
+        use_idx = self._split_indices[split]
 
-        rng.shuffle(train_idx)
-        rng.shuffle(val_idx)
-        rng.shuffle(test_idx)
-
-        use_idx = {"train": train_idx, "val": val_idx, "test": test_idx}[split]
         self.items = [items[i] for i in use_idx]
 
         # store processing params
         self._img_size = (img_w, img_h)  # PIL wants (W,H)
+
+        # Data augmentation
+        if split == "train":
+            self.rgb_transform = transforms.Compose([
+                transforms.RandomResizedCrop(self._img_size[0], scale=(0.8, 1.0)),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.ColorJitter(
+                    brightness=0.2,
+                    contrast=0.2,
+                    saturation=0.2,
+                    hue=0.05,
+                ),
+            ])
+
+            self.rgb_tensor_transform = transforms.RandomErasing(
+                p=0.25,
+                scale=(0.02, 0.15),
+                ratio=(0.3, 3.3),
+                value=0
+            )
+        else:
+            self.rgb_transform = transforms.Compose([
+                transforms.Resize(self._img_size),
+            ])
+            self.rgb_tensor_transform = None
+
         self._depth_fill = depth_fill
         self._depth_norm = depth_norm
         self._lowercase = lowercase
@@ -177,8 +242,13 @@ class SUNRGBDSceneDataset(Dataset):
         y = self.label_to_index[label_str]
 
         # rgb
-        rgb = Image.open(rgb_path).convert("RGB").resize(self._img_size, resample=Image.BILINEAR)
+        # rgb = Image.open(rgb_path).convert("RGB").resize(self._img_size, resample=Image.BILINEAR)
+        rgb = Image.open(rgb_path).convert("RGB")
+        rgb = self.rgb_transform(rgb)
         rgb_t = _pil_rgb_to_tensor(rgb)  # (3,H,W)
+
+        if self.rgb_tensor_transform is not None:
+            rgb_t = self.rgb_tensor_transform(rgb_t)
 
         # depth
         depth = _load_depth_png(depth_path)
@@ -191,3 +261,23 @@ class SUNRGBDSceneDataset(Dataset):
         depth_t = torch.from_numpy(np.transpose(depth, (2, 0, 1))).float()  # (1,H,W)
 
         return rgb_t, depth_t, torch.tensor(y, dtype=torch.long), sid
+
+    def summarize(self) -> None:
+        for k, v in self._split_indices.items():
+            print(f"split: {k}")
+            print(f"Total Samples: {len(self._split_indices[k])}")
+
+            label_count = {}
+            for i in v:
+                _, _, _, label_path = self.__all_items[i]
+                label = _read_single_token(label_path, lowercase=self._lowercase)
+
+                if label not in label_count:
+                    label_count[label] = 0
+                label_count[label] += 1
+
+            for label, count in sorted(label_count.items()):
+                print(f"  {label}: {count}")
+            print()
+
+
