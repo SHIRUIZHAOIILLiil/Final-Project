@@ -1,20 +1,20 @@
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import SUNRGBDSceneDataset
 from models import load_model_test
-from utilities import load_yaml
-import torch.nn as nn
+from utilities import load_yaml, get_input
+from pathlib import Path
 
-def evaluate():
-    cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
+
+def evaluate(cfg, mode:str, modelPath:Path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ds_test = SUNRGBDSceneDataset(cfg=cfg, split="test")
-    mode = "rgb"
     in_channels = {"rgb": 3, "depth": 1, "rgbd": 4}[mode]
     num_classes = len(ds_test.label_to_index)
 
     batch_size = 16
-    model = load_model_test('../checkpoints/best_model.pth',
+    model = load_model_test(modelPath,
                        device=device,
                        num_classes=num_classes,
                        in_channels=in_channels)
@@ -32,7 +32,7 @@ def evaluate():
             depth = depth.to(device)
             y = y.to(device)
 
-            x = rgb  # RGB-only
+            x = get_input(rgb, depth, mode)
             logits = model(x)
             loss = criterion(logits, y)
 
@@ -48,7 +48,8 @@ def evaluate():
 
 
 if __name__ == "__main__":
-    evaluate()
+    cfg = load_yaml("configs/dataset_sun_rgb_d.yaml")
+    evaluate(cfg=cfg, mode="depth", modelPath=Path("../checkpoints/best_depth_model.pth"))
 
 
 
