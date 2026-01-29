@@ -3,17 +3,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import SUNRGBDSceneDataset
 from models import build_resnet18
-from utilities import load_yaml
+from utilities import load_yaml, get_input
 
-def get_input(rgb, depth, mode: str):
-    if mode == "rgb":
-        return rgb
-    elif mode == "depth":
-        return depth
-    elif mode == "rgbd":
-        return torch.cat([rgb, depth], dim=1)
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
 
 def train_one_epoch(model, loader, optimizer, criterion, device, mode: str):
     model.train()
