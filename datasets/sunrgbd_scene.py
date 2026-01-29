@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-
+import random
 import numpy as np
 from PIL import Image
 
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+from torchvision.transforms import functional
+from torchvision.transforms import InterpolationMode
 
 def _read_single_token(path: Path, lowercase: bool = True) -> str:
     s = path.read_text(encoding="utf-8", errors="ignore").strip()
@@ -203,16 +205,12 @@ class SUNRGBDSceneDataset(Dataset):
 
         # Data augmentation
         if split == "train":
-            self.rgb_transform = transforms.Compose([
-                transforms.RandomResizedCrop(self._img_size[0], scale=(0.8, 1.0)),
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.ColorJitter(
-                    brightness=0.2,
-                    contrast=0.2,
-                    saturation=0.2,
-                    hue=0.05,
-                ),
-            ])
+            self.crop_scale = (0.8, 1.0)
+            self.flip_p = 0.5
+
+            self.rgb_color = transforms.ColorJitter(
+                brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
+            )
 
             self.rgb_tensor_transform = transforms.RandomErasing(
                 p=0.25,
@@ -221,9 +219,9 @@ class SUNRGBDSceneDataset(Dataset):
                 value=0
             )
         else:
-            self.rgb_transform = transforms.Compose([
-                transforms.Resize(self._img_size),
-            ])
+            self.crop_scale = None
+            self.flip_p = 0.0
+            self.rgb_color = None
             self.rgb_tensor_transform = None
 
         self._depth_fill = depth_fill
@@ -242,20 +240,45 @@ class SUNRGBDSceneDataset(Dataset):
         y = self.label_to_index[label_str]
 
         # rgb
-        # rgb = Image.open(rgb_path).convert("RGB").resize(self._img_size, resample=Image.BILINEAR)
         rgb = Image.open(rgb_path).convert("RGB")
-        rgb = self.rgb_transform(rgb)
-        rgb_t = _pil_rgb_to_tensor(rgb)  # (3,H,W)
-
-        if self.rgb_tensor_transform is not None:
-            rgb_t = self.rgb_tensor_transform(rgb_t)
 
         # depth
         depth = _load_depth_png(depth_path)
         depth_img = Image.fromarray(depth)
-        depth_img = depth_img.resize(self._img_size, resample=Image.NEAREST)
-        depth = np.array(depth_img).astype(np.float32)
+        if self.split == "train":
+            # aspect ratio = W / H from 0.75 to 1.333
+            # 0.75 裁剪框偏高, 1.33 裁剪框偏宽
+            i, j, h, w = transforms.RandomResizedCrop.get_params(
+                rgb, scale=self.crop_scale, ratio=(3 / 4, 4 / 3)
+            )
+            rgb = functional.resized_crop(
+                # 直接把整个图缩放
+                rgb, i, j, h, w, size=self._img_size, interpolation=InterpolationMode.BILINEAR #缩放采用的线性插值
+            )
+            depth_img = functional.resized_crop(
+                depth_img, i, j, h, w, size=self._img_size, interpolation=InterpolationMode.NEAREST
+            )
+            # Sample flip ONCE and apply to both
+            if random.random() < self.flip_p:
+                rgb = functional.hflip(rgb)
+                depth_img = functional.hflip(depth_img)
 
+            # RGB-only color jitter (after geometry)
+            if self.rgb_color is not None:
+                rgb = self.rgb_color(rgb)
+        else:
+            # val/test deterministic resize
+            rgb = functional.resize(rgb, self._img_size, interpolation=InterpolationMode.BILINEAR)
+            depth_img = functional.resize(depth_img, self._img_size, interpolation=InterpolationMode.NEAREST)
+
+
+
+        # rgb to tensor
+        rgb_t = _pil_rgb_to_tensor(rgb)  # (3,H,W)
+        if self.rgb_tensor_transform is not None:
+            rgb_t = self.rgb_tensor_transform(rgb_t)
+
+        depth = np.array(depth_img).astype(np.float32)
         depth = _normalize_depth(depth, mode=self._depth_norm, fill_missing=self._depth_fill)
         depth = depth[:, :, None]  # (H,W,1)
         depth_t = torch.from_numpy(np.transpose(depth, (2, 0, 1))).float()  # (1,H,W)
