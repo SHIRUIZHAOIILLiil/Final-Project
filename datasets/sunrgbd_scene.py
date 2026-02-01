@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import random
+import math
 import numpy as np
 from PIL import Image
 
@@ -119,6 +120,35 @@ def _make_split(
     return train_idx, val_idx, test_idx
 
 
+def _random_erasing_sync(rgb, depth, p=0.25, scale=(0.02, 0.15), ratio=(0.3, 3.3), value=0):
+    """
+    rgb:   Tensor (3, H, W)
+    depth: Tensor (1, H, W)
+    """
+
+    if random.random() > p:
+        return rgb, depth
+
+    _, H, W = rgb.shape
+    area = H * W
+
+    for _ in range(10):  # 最多尝试 10 次，和 torchvision 一致
+        target_area = random.uniform(*scale) * area
+        aspect_ratio = random.uniform(*ratio)
+
+        h = int(round(math.sqrt(target_area * aspect_ratio)))
+        w = int(round(math.sqrt(target_area / aspect_ratio)))
+
+        if h < H and w < W:
+            top = random.randint(0, H - h)
+            left = random.randint(0, W - w)
+
+            rgb[:, top:top+h, left:left+w] = value
+            depth[:, top:top+h, left:left+w] = value
+            return rgb, depth
+
+    return rgb, depth
+
 class SUNRGBDSceneDataset(Dataset):
     """
     YAML-driven SUNRGBD NYUdata (scene-level) dataset.
@@ -211,13 +241,6 @@ class SUNRGBDSceneDataset(Dataset):
             self.rgb_color = transforms.ColorJitter(
                 brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
             )
-
-            self.rgb_tensor_transform = transforms.RandomErasing(
-                p=0.25,
-                scale=(0.02, 0.15),
-                ratio=(0.3, 3.3),
-                value=0
-            )
         else:
             self.crop_scale = None
             self.flip_p = 0.0
@@ -275,13 +298,20 @@ class SUNRGBDSceneDataset(Dataset):
 
         # rgb to tensor
         rgb_t = _pil_rgb_to_tensor(rgb)  # (3,H,W)
-        if self.rgb_tensor_transform is not None:
-            rgb_t = self.rgb_tensor_transform(rgb_t)
 
         depth = np.array(depth_img).astype(np.float32)
         depth = _normalize_depth(depth, mode=self._depth_norm, fill_missing=self._depth_fill)
         depth = depth[:, :, None]  # (H,W,1)
         depth_t = torch.from_numpy(np.transpose(depth, (2, 0, 1))).float()  # (1,H,W)
+
+        rgb_t, depth_t = _random_erasing_sync(
+            rgb_t,
+            depth_t,
+            p=0.25,
+            scale=(0.02, 0.15),
+            ratio=(0.3, 3.3),
+            value=0
+        )
 
         return rgb_t, depth_t, torch.tensor(y, dtype=torch.long), sid
 
