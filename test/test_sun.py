@@ -49,7 +49,10 @@ def evaluate(cfg, mode:str, modelPath:Path):
 
 if __name__ == "__main__":
     cfg = load_yaml("configs/dataset_sun_rgb_d.yaml")
-    evaluate(cfg=cfg, mode="depth", modelPath=Path("../checkpoints/best_depth_model.pth"))
+    # evaluate(cfg=cfg, mode="rgb", modelPath=Path("../checkpoints/best_rgb_model.pth"))
+    # evaluate(cfg=cfg, mode="depth", modelPath=Path("../checkpoints/best_depth_model.pth"))
+    evaluate(cfg=cfg, mode="rgbd", modelPath=Path("../checkpoints/best_rgbd_model.pth"))
+
 
 
 

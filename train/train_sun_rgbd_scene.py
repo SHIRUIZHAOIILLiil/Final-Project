@@ -1,10 +1,15 @@
-import torch
+import torch, random, numpy as np
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import SUNRGBDSceneDataset
 from models import build_resnet18
-from utilities import load_yaml, get_input
+from utilities import load_yaml, get_input, ExperimentLogger
 
+def set_global_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 def train_one_epoch(model, loader, optimizer, criterion, device, mode: str):
     model.train()
@@ -68,15 +73,18 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
         mode="min",
         factor=0.5,
         patience=2,
-        min_lr=1e-6
+        min_lr=1e-7
     )
 
     best_val_acc = -1
     patience = 8
     bad_epochs = 0
     min_delta = 1e-3
+    best_epoch = -1
 
-    save_path = f"./checkpoints/best_{mode}_model.pth"
+    save_path_model = f"./checkpoints/best_{mode}_model.pth"
+    save_path_outcome = f"./outcomes/outcomes.csv"
+    logger = ExperimentLogger(save_path_outcome)
 
     for epoch in range(epochs):
         train_loss, train_acc = train_one_epoch(model, loader_train, optimizer, criterion, device, mode)
@@ -100,7 +108,7 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "best_val_acc": best_val_acc,
-            }, save_path)
+            }, save_path_model)
 
         else:
             bad_epochs += 1
@@ -108,10 +116,30 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
         if bad_epochs >= patience:
             break
 
+    logger.log(
+        mode=mode,
+        seed=cfg["dataset"]["split"]["seed"],
+        best_epoch=best_epoch,
+        best_val_acc=best_val_acc,
+    )
 
 def main():
-    cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
-    train(cfg, mode="depth", epochs=20, batch_size=16)
+    base_cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
+    base_seed = base_cfg["dataset"]["split"]["seed"]
+
+    seeds = [424, 9, base_cfg["dataset"]["split"]["seed"]]
+
+    seeds = [base_seed] + [s for s in seeds if s != base_seed]
+
+    for seed in seeds:
+        cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
+        cfg["dataset"]["split"]["seed"] = seed
+
+        set_global_seed(seed)
+
+        train(cfg, mode="rgb", epochs=40, batch_size=16)
+        train(cfg, mode="depth", epochs=40, batch_size=16)
+        train(cfg, mode="rgbd", epochs=40, batch_size=16)
 
 
 

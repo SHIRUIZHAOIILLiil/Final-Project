@@ -1,6 +1,5 @@
-import yaml
+import yaml, csv, torch, os
 from pathlib import Path
-import torch
 
 def load_yaml(path: str) -> dict:
     root = Path(__file__).resolve().parent.parent
@@ -17,6 +16,20 @@ def get_input(rgb, depth, mode: str):
         return torch.cat([rgb, depth], dim=1)
     else:
         raise ValueError(f"Unknown mode: {mode}")
+
+class ExperimentLogger:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.header_written = os.path.exists(filepath)
+
+    def log(self, **kwargs):
+        write_header = not self.header_written
+        with open(self.filepath, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=kwargs.keys())
+            if write_header:
+                writer.writeheader()
+                self.header_written = True
+            writer.writerow(kwargs)
 
 
 if __name__ == '__main__':
