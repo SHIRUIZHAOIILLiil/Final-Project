@@ -4,10 +4,9 @@ from torch.utils.data import DataLoader
 from datasets import SUNRGBDSceneDataset
 from models import load_model_test
 from utilities import load_yaml, get_input
-from pathlib import Path
 
 
-def evaluate(cfg, mode:str, modelPath:Path):
+def evaluate(cfg, mode:str, modelPath:str):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ds_test = SUNRGBDSceneDataset(cfg=cfg, split="test")
     in_channels = {"rgb": 3, "depth": 1, "rgbd": 4}[mode]
@@ -44,14 +43,15 @@ def evaluate(cfg, mode:str, modelPath:Path):
 
     test_loss = test_loss_sum / test_n
     test_acc = test_correct / test_n
-    print(f"TEST: loss={test_loss:.4f}, acc={test_acc:.4f}")
+    # print(f"TEST: loss={test_loss:.4f}, acc={test_acc:.4f}")
+    return test_loss, test_acc
 
 
 if __name__ == "__main__":
     cfg = load_yaml("configs/dataset_sun_rgb_d.yaml")
     # evaluate(cfg=cfg, mode="rgb", modelPath=Path("../checkpoints/best_rgb_model.pth"))
     # evaluate(cfg=cfg, mode="depth", modelPath=Path("../checkpoints/best_depth_model.pth"))
-    evaluate(cfg=cfg, mode="rgbd", modelPath=Path("../checkpoints/best_rgbd_model.pth"))
+    evaluate(cfg=cfg, mode="rgbd", modelPath="checkpoints/best_rgbd_model.pth")
 
 
 
