@@ -1,0 +1,1 @@
+from .train_sun_rgbd_scene import train

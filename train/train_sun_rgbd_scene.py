@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from datasets import SUNRGBDSceneDataset
 from models import build_resnet18
 from utilities import load_yaml, get_input, ExperimentLogger
+from test import evaluate
 
 def set_global_seed(seed):
     random.seed(seed)
@@ -82,8 +83,8 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
     min_delta = 1e-3
     best_epoch = -1
 
-    save_path_model = f"./checkpoints/best_{mode}_model.pth"
-    save_path_outcome = f"./outcomes/outcomes.csv"
+    save_path_model = f"../checkpoints/best_{mode}_seed_{cfg["dataset"]["split"]["seed"]}_model.pth"
+    save_path_outcome = f"../outcomes/outcomes.csv"
     logger = ExperimentLogger(save_path_outcome)
 
     for epoch in range(epochs):
@@ -102,7 +103,7 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
         if val_acc > best_val_acc + min_delta:
             best_val_acc = val_acc
             bad_epochs = 0
-            best_epoch = epoch
+            best_epoch = epoch + 1
             torch.save({
                 "epoch": epoch,
                 "model": model.state_dict(),
@@ -115,12 +116,13 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
         print(bad_epochs)
         if bad_epochs >= patience:
             break
-
+    _, test_acc = evaluate(cfg=cfg, mode=mode, modelPath=save_path_model)
     logger.log(
         mode=mode,
         seed=cfg["dataset"]["split"]["seed"],
         best_epoch=best_epoch,
         best_val_acc=best_val_acc,
+        test_acc=test_acc,
     )
 
 def main():
@@ -146,3 +148,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+    # base_cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
+    # train(base_cfg, mode="rgb", epochs=1, batch_size=64)
