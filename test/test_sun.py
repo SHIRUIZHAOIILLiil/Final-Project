@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import SUNRGBDSceneDataset
-from models import load_model_test
+from models import build_model
 from utilities import load_yaml, get_input
 
 
@@ -13,13 +13,17 @@ def evaluate(cfg, mode:str, modelPath:str):
     num_classes = len(ds_test.label_to_index)
 
     batch_size = 16
-    model = load_model_test(modelPath,
-                       device=device,
-                       num_classes=num_classes,
-                       in_channels=in_channels)
+
+    model = build_model(cfg, num_classes=num_classes, in_channels=in_channels, pretrained=False)
+    ckpt = torch.load(modelPath, map_location=device)
+    state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    model.load_state_dict(state_dict, strict=True)
+    model.to(device)
+    model.eval()
+
     test_loader = DataLoader(ds_test, batch_size=batch_size, shuffle=False)
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.0001)
 
     test_loss_sum = 0.0
     test_correct = 0

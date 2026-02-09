@@ -2,7 +2,7 @@ import torch, random, numpy as np
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import SUNRGBDSceneDataset
-from models import build_resnet18
+from models import build_model
 from utilities import load_yaml, get_input, ExperimentLogger
 from test import evaluate
 
@@ -11,6 +11,12 @@ def set_global_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+def set_seeds(base_cfg: dict):
+    base_seed = base_cfg["dataset"]["split"]["seed"]
+    seeds = [424, 9, base_cfg["dataset"]["split"]["seed"]]
+    seeds = [base_seed] + [s for s in seeds if s != base_seed]
+    return seeds
 
 def train_one_epoch(model, loader, optimizer, criterion, device, mode: str):
     model.train()
@@ -52,7 +58,7 @@ def eval_one_epoch(model, loader, criterion, device, mode: str):
 
     return loss_sum / n, correct / n
 
-def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
+def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1, pretrained: bool = True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ds_train = SUNRGBDSceneDataset(cfg, split="train")
@@ -64,7 +70,7 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
     num_classes = len(ds_train.label_to_index)
     in_channels = {"rgb": 3, "depth": 1, "rgbd": 4}[mode]
 
-    model = build_resnet18(num_classes=num_classes, in_channels=in_channels)
+    model = build_model(cfg, num_classes=num_classes, in_channels=in_channels, pretrained=pretrained)# build_resnet18(num_classes=num_classes, in_channels=in_channels)
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -83,8 +89,8 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
     min_delta = 1e-3
     best_epoch = -1
 
-    save_path_model = f"../checkpoints/best_{mode}_seed_{cfg["dataset"]["split"]["seed"]}_model.pth"
-    save_path_outcome = f"../outcomes/outcomes.csv"
+    save_path_model = f"../checkpoints/best_{mode}_seed_{cfg["dataset"]["split"]["seed"]}_model_{cfg["dataset"]["model"]["name"]}.pth"
+    save_path_outcome = f"../outcomes/outcomes_{cfg["dataset"]["model"]["name"]}.csv"
     logger = ExperimentLogger(save_path_outcome)
 
     for epoch in range(epochs):
@@ -125,17 +131,15 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1):
         test_acc=test_acc,
     )
 
-def main():
+def main(model:str = "resnet18"):
     base_cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
-    base_seed = base_cfg["dataset"]["split"]["seed"]
-
-    seeds = [424, 9, base_cfg["dataset"]["split"]["seed"]]
-
-    seeds = [base_seed] + [s for s in seeds if s != base_seed]
+    seeds = set_seeds(base_cfg)
 
     for seed in seeds:
         cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
+
         cfg["dataset"]["split"]["seed"] = seed
+        cfg["dataset"]["model"]["name"] = model
 
         set_global_seed(seed)
 
@@ -147,6 +151,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-    # base_cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
-    # train(base_cfg, mode="rgb", epochs=1, batch_size=64)
+    # main()
+    # cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
+    # cfg["dataset"]["model"]["name"] = "vit"
+    # train(cfg, mode="depth", epochs=5, batch_size=16)
+    main("vit")

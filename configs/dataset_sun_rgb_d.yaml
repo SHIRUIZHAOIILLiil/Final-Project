@@ -38,5 +38,9 @@ dataset:
     seed: 42
     stratify: true                    # Hierarchical categorization
 
+  model:
+    name: "resnet18"
+
+
 experiment:
   seed: 42
