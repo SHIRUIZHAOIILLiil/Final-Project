@@ -15,11 +15,16 @@ def evaluate(cfg, mode:str, modelPath:str):
     batch_size = 16
 
     model = build_model(cfg, num_classes=num_classes, in_channels=in_channels, pretrained=False)
+
+    model.to(device)
+    model.eval()
+    dummy = torch.zeros(1, in_channels, cfg["dataset"]["preprocessing"]["image_size"][0], cfg["dataset"]["preprocessing"]["image_size"][1], device=device)
+    with torch.no_grad():
+        _ = model(dummy)
+
     ckpt = torch.load(modelPath, map_location=device)
     state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
     model.load_state_dict(state_dict, strict=True)
-    model.to(device)
-    model.eval()
 
     test_loader = DataLoader(ds_test, batch_size=batch_size, shuffle=False)
 
@@ -55,7 +60,10 @@ if __name__ == "__main__":
     cfg = load_yaml("configs/dataset_sun_rgb_d.yaml")
     # evaluate(cfg=cfg, mode="rgb", modelPath=Path("../checkpoints/best_rgb_model.pth"))
     # evaluate(cfg=cfg, mode="depth", modelPath=Path("../checkpoints/best_depth_model.pth"))
-    evaluate(cfg=cfg, mode="rgbd", modelPath="checkpoints/best_rgbd_model.pth")
+    # evaluate(cfg=cfg, mode="rgbd", modelPath="checkpoints/best_rgbd_model.pth")
+    cfg["dataset"]["model"]["name"] = 'resnet18ViT'
+    t1, t2 = evaluate(cfg=cfg, mode="rgb", modelPath="../checkpoints/best_rgb_seed_42_model_resnet18ViT.pth")
+    print(t1, t2)
 
 
 

@@ -153,6 +153,7 @@ def main(model:str = "resnet18"):
 if __name__ == '__main__':
     # main()
     # cfg = load_yaml("./configs/dataset_sun_rgb_d.yaml")
-    # cfg["dataset"]["model"]["name"] = "vit"
-    # train(cfg, mode="depth", epochs=5, batch_size=16)
-    main("vit")
+    # cfg["dataset"]["model"]["name"] = "resnet18ViT"
+    # train(cfg, mode="rgb", epochs=10, batch_size=16)
+    main("resnet18ViT ")
+

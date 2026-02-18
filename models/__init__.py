@@ -1,5 +1,5 @@
 from .resnet_sun import build_resnet18
-from .resnet_vit_sun import build_vit_b16
+from .resnet_vit_sun import build_vit_b16, build_resnet_vit
 
 
 def build_model(cfg, num_classes: int, in_channels: int, pretrained: bool = True):
@@ -10,6 +10,9 @@ def build_model(cfg, num_classes: int, in_channels: int, pretrained: bool = True
 
     if name == "vit":
         return build_vit_b16(num_classes=num_classes, in_channels=in_channels, pretrained=pretrained)
+
+    if name == "resnet18ViT":
+        return build_resnet_vit(num_classes=num_classes, in_channels=in_channels, pretrained=pretrained)
 
 
     raise ValueError(f"Unknown model name: {name}")
