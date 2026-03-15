@@ -1,5 +1,5 @@
 dataset:
-  name: sunrgbd_nyu_scene
+  name: sunrgbd_nyu_object
   root: "E:/dataset/SUNRGBD"          # SUNRGBD root directory
   sensor: "kv1"
   subset: "NYUdata"                   # NYUdata
@@ -14,13 +14,13 @@ dataset:
     ext: ".png"
     pattern: "{id}.png"
 
-  task: "image_pair"                 # Key: image pair
-  labels:
-    type: "per_single_file"
-    filename: "scene.txt"
-    format: "single_token"
-    lowercase: true
-    strip: true
+  task: "object_roi"                 # Key: image pair
+  roi:
+    index_train: "E:/dataset/SUNRGBD/roi_index/roi_train.jsonl"
+    index_val: "E:/dataset/SUNRGBD/roi_index/roi_val.jsonl"
+    index_test: "E:/dataset/SUNRGBD/roi_index/roi_test.jsonl"
+    min_box_size: 20
+    drop_unknown: true
 
   preprocessing:
     image_size: [224, 224]
@@ -31,12 +31,12 @@ dataset:
       to_3ch: false
 
   split:
-    method: "random"                  # First, randomly assign tasks and run the pipeline.
+    method: "by_image"                  # First, randomly assign tasks and run the pipeline.
     train: 0.7
     val: 0.15
     test: 0.15
     seed: 42
-    stratify: true                    # Hierarchical categorization
+    stratify: false                  # Hierarchical categorization
 
   model:
     name: "resnet18"

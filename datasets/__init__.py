@@ -1,1 +1,2 @@
 from .sunrgbd_scene import SUNRGBDSceneDataset
+from .sunrgbd_object import SUNRGBDObjectROIDataset
