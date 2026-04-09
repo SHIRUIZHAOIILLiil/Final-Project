@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from datasets import SUNRGBDObjectROIDatasetMidFusionLowLight
+from datasets import SUNRGBDObjectROIDatasetMidFusion
 from models import build_model
 from utilities import load_yaml, ExperimentLogger, apply_experiment_preset
 from test.test_sun_object_midfusion import evaluate_for_object_midfusion
@@ -88,14 +88,15 @@ def _midfusion_experiment_tag(cfg) -> str:
 def _build_experiment_metadata(cfg, *, epochs: int, batch_size: int, pretrained: bool,
                                topk: int, seed_for_train: int, lr: float,
                                weight_decay: float, scheduler_factor: float,
-                               scheduler_patience: int):
+                               scheduler_patience: int, optimizer_name: str,
+                               label_smoothing: float):
     model_cfg = cfg["dataset"]["model"]
-    lowlight_cfg = cfg["dataset"].get("augmentation", {}).get("lowlight", {})
     return {
         "model_name": model_cfg["name"],
         "rgb_backbone": model_cfg.get("rgb_backbone", ""),
         "depth_backbone": model_cfg.get("depth_backbone", ""),
         "head_type": model_cfg.get("head_type", "transformer"),
+        "dropout": model_cfg.get("dropout", ""),
         "fusion_dim": model_cfg.get("fusion_dim", ""),
         "fusion_grid_size": model_cfg.get("fusion_grid_size", ""),
         "pretrained": pretrained,
@@ -104,14 +105,24 @@ def _build_experiment_metadata(cfg, *, epochs: int, batch_size: int, pretrained:
         "topk": topk,
         "lr": lr,
         "weight_decay": weight_decay,
+        "optimizer_name": optimizer_name,
+        "label_smoothing": label_smoothing,
         "scheduler_factor": scheduler_factor,
         "scheduler_patience": scheduler_patience,
         "split_seed": cfg["dataset"]["split"]["seed"],
         "train_seed": seed_for_train,
-        "lowlight_train": lowlight_cfg.get("enable_train", ""),
-        "lowlight_eval": lowlight_cfg.get("enable_eval", ""),
-        "lowlight_p": lowlight_cfg.get("p", ""),
     }
+
+
+def _build_optimizer(optimizer_name: str, model: nn.Module, lr: float, weight_decay: float):
+    name = optimizer_name.lower()
+    if name == "adamw":
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    if name == "adam":
+        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    raise ValueError(f"Unsupported optimizer_name='{optimizer_name}'. Use 'adamw' or 'adam'.")
+
+
 def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
                     pretrained: bool = True, topk: int = 10,
                     seed_for_train: int = 42, lr: float = 1e-4,
@@ -120,7 +131,10 @@ def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
                     scheduler_patience: int = 2,
                     fusion_dim: int | None = None,
                     fusion_grid_size: int | None = None,
-                    head_type: str | None = None):
+                    head_type: str | None = None,
+                    dropout: float | None = None,
+                    optimizer_name: str = "adamw",
+                    label_smoothing: float = 0.1):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Mid-fusion pipeline is only for RGB-D.
@@ -132,10 +146,12 @@ def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
         cfg["dataset"]["model"]["fusion_grid_size"] = fusion_grid_size
     if head_type is not None:
         cfg["dataset"]["model"]["head_type"] = head_type
+    if dropout is not None:
+        cfg["dataset"]["model"]["dropout"] = dropout
 
-    ds_train = SUNRGBDObjectROIDatasetMidFusionLowLight(cfg, split="train", mode=mode, topk=topk)
-    ds_val = SUNRGBDObjectROIDatasetMidFusionLowLight(cfg, split="val", mode=mode, label2id=ds_train.label2id)
-    ds_test = SUNRGBDObjectROIDatasetMidFusionLowLight(cfg, split="test", mode=mode, label2id=ds_train.label2id)
+    ds_train = SUNRGBDObjectROIDatasetMidFusion(cfg, split="train", mode=mode, topk=topk)
+    ds_val = SUNRGBDObjectROIDatasetMidFusion(cfg, split="val", mode=mode, label2id=ds_train.label2id)
+    ds_test = SUNRGBDObjectROIDatasetMidFusion(cfg, split="test", mode=mode, label2id=ds_train.label2id)
 
     _filter_keep_classes(ds_train, ds_val, ds_test)
 
@@ -160,8 +176,8 @@ def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
     # Keep in_channels=4 only for compatibility with your existing build_model signature.
     model = build_model(cfg, num_classes=num_classes, in_channels=4, pretrained=pretrained).to(device)
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    optimizer = _build_optimizer(optimizer_name, model, lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode="min",
@@ -178,8 +194,8 @@ def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
 
     model_name = cfg["dataset"]["model"]["name"]
     experiment_tag = _midfusion_experiment_tag(cfg)
-    save_path_model = f'../checkpoints/object_best_rgbd_seed_{seed_for_train}_model_{model_name}_{experiment_tag}_lowlight.pth'
-    save_path_outcome = f'../outcomes/object_outcomes_{model_name}_{experiment_tag}_lowlight.csv'
+    save_path_model = f'../checkpoints/object_best_rgbd_seed_{seed_for_train}_model_{model_name}_{experiment_tag}.pth'
+    save_path_outcome = f'../outcomes/object_outcomes_{model_name}_{experiment_tag}.csv'
     logger = ExperimentLogger(save_path_outcome)
     experiment_metadata = _build_experiment_metadata(
         cfg,
@@ -192,6 +208,8 @@ def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
         weight_decay=weight_decay,
         scheduler_factor=scheduler_factor,
         scheduler_patience=scheduler_patience,
+        optimizer_name=optimizer_name,
+        label_smoothing=label_smoothing,
     )
 
     for epoch in range(epochs):
@@ -239,13 +257,18 @@ def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
 
 if __name__ == "__main__":
     base_cfg = load_yaml("./configs/dataset_sun_rgbd_object.yaml")
+
     preset_names = [
-        "vv_mlp_best_current_adapt",
+        "vv_mlp_best_current_dropout0",
+        "vv_mlp_best_current_dropout02",
+        "vv_mlp_best_current_ls005",
+        "vv_mlp_best_current_ls0",
+        "vv_mlp_best_current_adam",
     ]
     for preset_name in preset_names:
         cfg = copy.deepcopy(base_cfg)
         preset_train_kwargs = apply_experiment_preset(cfg, preset_name)
-        print(f"Running low-light preset: {preset_name}")
+        print(f"Running preset: {preset_name}")
         print(
             "model=",
             cfg["dataset"]["model"]["name"],
@@ -255,10 +278,8 @@ if __name__ == "__main__":
             cfg["dataset"]["model"]["depth_backbone"],
             "head_type=",
             cfg["dataset"]["model"]["head_type"],
-            "lowlight_train=",
-            cfg["dataset"]["augmentation"]["lowlight"]["enable_train"],
-            "lowlight_eval=",
-            cfg["dataset"]["augmentation"]["lowlight"]["enable_eval"],
+            "dropout=",
+            cfg["dataset"]["model"].get("dropout", 0.1),
         )
 
         training_seeds = [42, 123, 3407]

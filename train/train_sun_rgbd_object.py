@@ -116,7 +116,7 @@ def train(cfg, mode='rgb', epochs : int = 10, batch_size: int = 1, pretrained: b
     min_delta = 1e-3
     best_epoch = -1
 
-    save_path_model = f"../checkpoints/object_best_{mode}_seed_{cfg["dataset"]["split"]["seed"]}_model_{cfg["dataset"]["model"]["name"]}.pth"
+    save_path_model = f"../checkpoints/object_best_{mode}_seed_{seed_for_train}_model_{cfg["dataset"]["model"]["name"]}.pth"
     save_path_outcome = f"../outcomes/object_outcomes_{cfg["dataset"]["model"]["name"]}.csv"
     logger = ExperimentLogger(save_path_outcome)
 
