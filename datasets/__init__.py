@@ -1,2 +1,4 @@
 from .sunrgbd_scene import SUNRGBDSceneDataset
 from .sunrgbd_object import SUNRGBDObjectROIDataset
+from .sunrgbd_object_midfusion import SUNRGBDObjectROIDatasetMidFusion
+from .sunrgbd_object_midfusion_lowlight import SUNRGBDObjectROIDatasetMidFusionLowLight

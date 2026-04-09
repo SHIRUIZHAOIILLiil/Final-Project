@@ -40,6 +40,23 @@ dataset:
 
   model:
     name: "resnet18"
+    rgb_backbone: "resnet18"
+    depth_backbone: "resnet18"
+    dropout: 0.1
+    fusion_dim: 512
+    fusion_grid_size: 7
+    head_type: "transformer"
+
+  augmentation:
+    lowlight:
+      enable_train: false
+      enable_eval: true
+      p: 0.7
+      brightness_range: [ 0.25, 0.7 ]
+      contrast_range: [ 0.6, 0.95 ]
+      gamma_range: [ 1.2, 2.4 ]
+      noise_std_range: [ 0.01, 0.05 ]
+      blur_radius_range: [ 0.0, 1.2 ]
 
 
 experiment:
