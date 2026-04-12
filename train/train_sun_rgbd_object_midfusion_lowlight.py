@@ -112,6 +112,8 @@ def _build_experiment_metadata(cfg, *, epochs: int, batch_size: int, pretrained:
         "lowlight_eval": lowlight_cfg.get("enable_eval", ""),
         "lowlight_p": lowlight_cfg.get("p", ""),
     }
+
+
 def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
                     pretrained: bool = True, topk: int = 10,
                     seed_for_train: int = 42, lr: float = 1e-4,
@@ -240,7 +242,7 @@ def train_midfusion(cfg, epochs: int = 40, batch_size: int = 32,
 if __name__ == "__main__":
     base_cfg = load_yaml("./configs/dataset_sun_rgbd_object.yaml")
     preset_names = [
-        "vv_mlp_best_current_adapt",
+        "untuned_adapt",
     ]
     for preset_name in preset_names:
         cfg = copy.deepcopy(base_cfg)

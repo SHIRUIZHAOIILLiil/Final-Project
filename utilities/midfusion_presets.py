@@ -8,6 +8,44 @@ def _deep_update(dst, src):
 
 
 EXPERIMENT_PRESETS = {
+    "untuned_robustness": {
+        "model_cfg": {
+            "name": "resnet18vit_midfusion",
+            "rgb_backbone": "resnet18",
+            "depth_backbone": "resnet18",
+            "head_type": "transformer",
+            "fusion_dim": 512,
+            "fusion_grid_size": 7,
+        },
+        "dataset_overrides": {
+            "augmentation": {
+                "lowlight": {
+                    "enable_train": False,
+                    "enable_eval": True,
+                }
+            }
+        },
+        "train_kwargs": {},
+    },
+    "untuned_adapt": {
+        "model_cfg": {
+            "name": "resnet18vit_midfusion",
+            "rgb_backbone": "resnet18",
+            "depth_backbone": "resnet18",
+            "head_type": "transformer",
+            "fusion_dim": 512,
+            "fusion_grid_size": 7,
+        },
+        "dataset_overrides": {
+            "augmentation": {
+                "lowlight": {
+                    "enable_train": True,
+                    "enable_eval": True,
+                }
+            }
+        },
+        "train_kwargs": {},
+    },
     # Best normal-light configuration so far:
     #   - structure: VV + MLP
     #   - lr: 4e-5
