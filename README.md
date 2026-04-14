@@ -28,6 +28,16 @@ The project can:
 - evaluate saved checkpoints on held-out test data;
 - log experiment results for later comparison and analysis.
 
+## Installation
+
+Python dependencies are listed in `requirements.txt`.
+
+Install them with:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Repository structure
 
 ### Root files
